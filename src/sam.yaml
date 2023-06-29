@@ -102,7 +102,7 @@ Resources:
                   Action:
                     - s3:PutObject
                     - s3:PutObjectAcl
-                  Resource: !Sub arn:aws:s3:::${S3Bucket}/*
+                  Resource: !Sub arn:aws-cn:s3:::${S3Bucket}/*
         AssumeRolePolicyDocument:
           Version: "2012-10-17"
           Statement:
