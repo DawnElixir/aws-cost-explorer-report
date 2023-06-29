@@ -1,21 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright 2018 Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# 
-# Permission is hereby granted, free of charge, to any person obtaining a copy of this
-# software and associated documentation files (the "Software"), to deal in the Software
-# without restriction, including without limitation the rights to use, copy, modify,
-# merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
-# permit persons to whom the Software is furnished to do so.
-# 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
 """
 Cost Explorer Report
 
@@ -24,10 +9,6 @@ A script, for local or lambda use, to generate CostExplorer excel graphs
 """
 
 from __future__ import print_function
-
-__author__ = "David Faulkner"
-__version__ = "0.1.3"
-__license__ = "MIT No Attribution"
 
 import os
 import sys
@@ -48,8 +29,8 @@ from email.utils import COMMASPACE, formatdate
 
 #GLOBALS
 SES_REGION = os.environ.get('SES_REGION')
-if not SES_REGION:
-    SES_REGION="us-east-1"
+#if not SES_REGION:
+#    SES_REGION="us-east-1"
 ACCOUNT_LABEL = os.environ.get('ACCOUNT_LABEL')
 if not ACCOUNT_LABEL:
     ACCOUNT_LABEL = 'Email'
@@ -89,7 +70,7 @@ class CostExplorer:
     def __init__(self, CurrentMonth=False):
         #Array of reports ready to be output to Excel.
         self.reports = []
-        self.client = boto3.client('ce', region_name='us-east-1')
+        self.client = boto3.client('ce', region_name='cn-north-1')
         self.end = datetime.date.today().replace(day=1)
         self.riend = datetime.date.today()
         if CurrentMonth or CURRENT_MONTH:
@@ -111,7 +92,7 @@ class CostExplorer:
         
     def getAccounts(self):
         accounts = {}
-        client = boto3.client('organizations', region_name='us-east-1')
+        client = boto3.client('organizations', region_name='cn-north-1')
         paginator = client.get_paginator('list_accounts')
         response_iterator = paginator.paginate()
         for response in response_iterator:
@@ -346,6 +327,7 @@ class CostExplorer:
                 key = i['Keys'][0]
                 if key in self.accounts:
                     key = self.accounts[key][ACCOUNT_LABEL]
+                key.replace("Owner$", "")
                 row.update({key:float(i['Metrics']['UnblendedCost']['Amount'])}) 
             if not v['Groups']:
                 row.update({'Total':float(v['Total']['UnblendedCost']['Amount'])})
@@ -399,7 +381,7 @@ class CostExplorer:
                 chart.set_y_axis({'label_position': 'low'})
                 chart.set_x_axis({'label_position': 'low'})
                 worksheet.insert_chart('O2', chart, {'x_scale': 2.0, 'y_scale': 2.0})
-        writer.save()
+        writer.close()
         
         #Time to deliver the file to S3
         if os.environ.get('S3_BUCKET'):
@@ -433,34 +415,19 @@ class CostExplorer:
 def main_handler(event=None, context=None): 
     costexplorer = CostExplorer(CurrentMonth=False)
     #Default addReport has filter to remove Support / Credits / Refunds / UpfrontRI / Tax
-    #Overall Billing Reports
-    costexplorer.addReport(Name="Total", GroupBy=[],Style='Total',IncSupport=True)
-    costexplorer.addReport(Name="TotalChange", GroupBy=[],Style='Change')
-    costexplorer.addReport(Name="TotalInclCredits", GroupBy=[],Style='Total',NoCredits=False,IncSupport=True)
-    costexplorer.addReport(Name="TotalInclCreditsChange", GroupBy=[],Style='Change',NoCredits=False)
-    costexplorer.addReport(Name="Credits", GroupBy=[],Style='Total',CreditsOnly=True)
-    costexplorer.addReport(Name="Refunds", GroupBy=[],Style='Total',RefundOnly=True)
-    costexplorer.addReport(Name="RIUpfront", GroupBy=[],Style='Total',UpfrontOnly=True)
-    #GroupBy Reports
-    costexplorer.addReport(Name="Services", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Total',IncSupport=True)
-    costexplorer.addReport(Name="ServicesChange", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Change')
-    costexplorer.addReport(Name="Accounts", GroupBy=[{"Type": "DIMENSION","Key": "LINKED_ACCOUNT"}],Style='Total')
-    costexplorer.addReport(Name="AccountsChange", GroupBy=[{"Type": "DIMENSION","Key": "LINKED_ACCOUNT"}],Style='Change')
-    costexplorer.addReport(Name="Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total')
-    costexplorer.addReport(Name="RegionsChange", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Change')
     if os.environ.get('COST_TAGS'): #Support for multiple/different Cost Allocation tags
         for tagkey in os.environ.get('COST_TAGS').split(','):
             tabname = tagkey.replace(":",".") #Remove special chars from Excel tabname
             costexplorer.addReport(Name="{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Total')
             costexplorer.addReport(Name="Change-{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Change')
-    #RI Reports
-    try:
-        costexplorer.addRiReport(Name="RICoverage")
-        costexplorer.addRiReport(Name="RIUtilization")
-        costexplorer.addRiReport(Name="RIUtilizationSavings", Savings=True)
-        costexplorer.addRiReport(Name="RIRecommendation") #Service supported value(s): Amazon Elastic Compute Cloud - Compute, Amazon Relational Database Service
-    except Exception:
-        pass #Don't fail if account doesnt have any RI use
+    #Overall Billing Reports
+    costexplorer.addReport(Name="Total", GroupBy=[],Style='Total',IncSupport=True)
+    costexplorer.addReport(Name="TotalChange", GroupBy=[],Style='Change')
+    #GroupBy Reports
+    costexplorer.addReport(Name="Services", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Total',IncSupport=True)
+
+    costexplorer.addReport(Name="Accounts", GroupBy=[{"Type": "DIMENSION","Key": "LINKED_ACCOUNT"}],Style='Total')
+    costexplorer.addReport(Name="Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total')
     costexplorer.generateExcel()
     return "Report Generated"
 
