@@ -2,3 +2,4 @@ requests
 xlsxwriter
 pandas
 numpy
+urllib3<2
