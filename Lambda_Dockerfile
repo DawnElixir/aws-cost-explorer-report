@@ -1,0 +1,5 @@
+FROM public.ecr.aws/lambda/python:3.10
+COPY /src/lambda.py ${LAMBDA_TASK_ROOT}
+COPY /src/requirements.txt ${LAMBDA_TASK_ROOT}
+RUN pip3 install -r /${LAMBDA_TASK_ROOT}/requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+CMD [ "lambda.main_handler" ]
