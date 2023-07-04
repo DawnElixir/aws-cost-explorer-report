@@ -67,18 +67,11 @@ class CostExplorer:
     >>> costexplorer.addReport(GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}])
     >>> costexplorer.generateExcel()
     """    
-    def __init__(self, CurrentMonth=False, AccountToAssume):
+    def __init__(self, CurrentMonth=False):
         #Array of reports ready to be output to Excel.
         self.reports = []
-        if AccountToAssume:
-            sts_connection = boto3.client('sts')
-                acct_cred = sts_connection.assume_role(
-                    RoleArn="arn:aws-cn:iam::"+AccountToAssume+":role/ARM_Role",
-                    RoleSessionName="arm_cross_acct"
-                )
-                self.client = boto3.client('ce', region_name='cn-north-1', aws_access_key_id=acct_cred['Credentials']['AccessKeyId'], aws_secret_access_key=acct_cred['Credentials']['SecretAccessKey'], aws_session_token=acct_cred['Credentials']['SessionToken'])
-        else:
-            self.client = boto3.client('ce', region_name='cn-north-1')
+
+        self.client = boto3.client('ce', region_name='cn-north-1')
         self.end = datetime.date.today().replace(day=1)
         self.riend = datetime.date.today()
         if CurrentMonth or CURRENT_MONTH:
@@ -241,7 +234,7 @@ class CostExplorer:
         pass
             
     def addReport(self, Name="Default",GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"},], 
-    Style='Total', NoCredits=True, CreditsOnly=False, RefundOnly=False, UpfrontOnly=False, IncSupport=False, IncTax=True, Assume=False):
+    Style='Total', NoCredits=True, CreditsOnly=False, RefundOnly=False, UpfrontOnly=False, IncSupport=False, IncTax=True, AssumeAccount=False):
         type = 'chart' #other option table
         results = []
         if not NoCredits:
@@ -290,14 +283,14 @@ class CostExplorer:
             else:
                 Filter = Dimensions.copy()
 
-            if Assume:
+            if AssumeAccount:
                 sts_connection = boto3.client('sts')
                 acct_cred = sts_connection.assume_role(
-                    RoleArn="arn:aws-cn:iam::"+Assume+":role/ARM_Role",
-                    RoleSessionName="arm_cross_acct_lambda"
+                    RoleArn="arn:aws-cn:iam::"+AssumeAccount+":role/ARM_Role",
+                    RoleSessionName="arm_cross_acct"
                 )
-                another_acct_client = boto3.client('ce', region_name='cn-north-1', aws_access_key_id=acct_cred['Credentials']['AccessKeyId'], aws_secret_access_key=acct_cred['Credentials']['SecretAccessKey'], aws_session_token=acct_cred['Credentials']['SessionToken'])
-                response = another_acct_client.get_cost_and_usage(
+                target_acct_client = boto3.client('ce', region_name='cn-north-1', aws_access_key_id=acct_cred['Credentials']['AccessKeyId'], aws_secret_access_key=acct_cred['Credentials']['SecretAccessKey'], aws_session_token=acct_cred['Credentials']['SessionToken'])
+                response = target_acct_client.get_cost_and_usage(
                     TimePeriod={
                         'Start': self.start.isoformat(),
                         'End': self.end.isoformat()
@@ -441,24 +434,23 @@ class CostExplorer:
 
 
 def main_handler(event=None, context=None): 
+    costexplorer = CostExplorer(CurrentMonth=False)
     if os.environ.get('ACCOUNTS'): #Support for multiple/different Cost Allocation tags
         for account in os.environ.get('ACCOUNTS').split(','):
-            costexplorer = CostExplorer(CurrentMonth=False, account)
-    
             #Default addReport has filter to remove Support / Credits / Refunds / UpfrontRI / Tax
             if os.environ.get('COST_TAGS'): #Support for multiple/different Cost Allocation tags
                 for tagkey in os.environ.get('COST_TAGS').split(','):
                     tabname = tagkey.replace(":",".") #Remove special chars from Excel tabname
-                    costexplorer.addReport(Name="{}".format(account+"-"+tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Total')
-                    costexplorer.addReport(Name="Change-{}".format(account+"-"+tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Change')
+                    costexplorer.addReport(Name="{}".format(account+"-"+tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Total', AssumeAccount=account)
+                    costexplorer.addReport(Name="Change-{}".format(account+"-"+tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Change', AssumeAccount=account)
             #Overall Billing Reports
-            costexplorer.addReport(Name=account+"-Total", GroupBy=[],Style='Total',IncSupport=True)
-            costexplorer.addReport(Name=account+"-TotalChange", GroupBy=[],Style='Change')
+            costexplorer.addReport(Name=account+"-Total", GroupBy=[],Style='Total',IncSupport=True, AssumeAccount=account)
+            costexplorer.addReport(Name=account+"-TotalChange", GroupBy=[],Style='Change', AssumeAccount=account)
             #GroupBy Reports
-            costexplorer.addReport(Name=account+"-Services", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Total',IncSupport=True)
+            costexplorer.addReport(Name=account+"-Services", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Total',IncSupport=True, AssumeAccount=account)
             
             #costexplorer.addReport(Name=account+"-Accounts", GroupBy=[{"Type": "DIMENSION","Key": "LINKED_ACCOUNT"}],Style='Total')
-            costexplorer.addReport(Name=account+"-Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total')
+            costexplorer.addReport(Name=account+"-Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total', AssumeAccount=account)
     else:
         costexplorer = CostExplorer(CurrentMonth=False)
 
