@@ -61,6 +61,8 @@ else:
 TAG_VALUE_FILTER = os.environ.get('TAG_VALUE_FILTER') or '*'
 TAG_KEY = os.environ.get('TAG_KEY')
 
+ACCOUNTS
+
 class CostExplorer:
     """Retrieves BillingInfo checks from CostExplorer API
     >>> costexplorer = CostExplorer()
@@ -80,7 +82,7 @@ class CostExplorer:
             self.start = (datetime.date.today() - relativedelta(months=+1)).replace(day=1) #1st day of month a month ago
         else:
             # Default is last 12 months
-            self.start = (datetime.date.today() - relativedelta(months=+12)).replace(day=1) #1st day of month 12 months ago
+            self.start = (datetime.date.today() - relativedelta(months=+6)).replace(day=1) #1st day of month 12 months ago
     
         self.ristart = (datetime.date.today() - relativedelta(months=+11)).replace(day=1) #1st day of month 11 months ago
         self.sixmonth = (datetime.date.today() - relativedelta(months=+6)).replace(day=1) #1st day of month 6 months ago, so RI util has savings values
@@ -233,7 +235,7 @@ class CostExplorer:
         pass
             
     def addReport(self, Name="Default",GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"},], 
-    Style='Total', NoCredits=True, CreditsOnly=False, RefundOnly=False, UpfrontOnly=False, IncSupport=False, IncTax=True):
+    Style='Total', NoCredits=True, CreditsOnly=False, RefundOnly=False, UpfrontOnly=False, IncSupport=False, IncTax=True, Assume=False):
         type = 'chart' #other option table
         results = []
         if not NoCredits:
@@ -282,18 +284,38 @@ class CostExplorer:
             else:
                 Filter = Dimensions.copy()
 
-            response = self.client.get_cost_and_usage(
-                TimePeriod={
-                    'Start': self.start.isoformat(),
-                    'End': self.end.isoformat()
-                },
-                Granularity='MONTHLY',
-                Metrics=[
-                    'UnblendedCost',
-                ],
-                GroupBy=GroupBy,
-                Filter=Filter
-            )
+            if Assume:
+                sts_connection = boto3.client('sts')
+                acct_cred = sts_connection.assume_role(
+                    RoleArn="arn:aws-cn:iam::"+Assume+":role/ARM_Role",
+                    RoleSessionName="arm_cross_acct_lambda"
+                )
+                another_acct_client = boto3.client('ce', region_name='cn-north-1', aws_access_key_id=acct_cred['Credentials']['AccessKeyId'], aws_secret_access_key=acct_cred['Credentials']['SecretAccessKey'], aws_session_token=acct_cred['Credentials']['SessionToken'])
+                response = another_acct_client.get_cost_and_usage(
+                    TimePeriod={
+                        'Start': self.start.isoformat(),
+                        'End': self.end.isoformat()
+                    },
+                    Granularity='MONTHLY',
+                    Metrics=[
+                        'UnblendedCost',
+                    ],
+                    GroupBy=GroupBy,
+                    Filter=Filter
+                )
+            else:
+                response = self.client.get_cost_and_usage(
+                    TimePeriod={
+                        'Start': self.start.isoformat(),
+                        'End': self.end.isoformat()
+                    },
+                    Granularity='MONTHLY',
+                    Metrics=[
+                        'UnblendedCost',
+                    ],
+                    GroupBy=GroupBy,
+                    Filter=Filter
+                )
 
         if response:
             results.extend(response['ResultsByTime'])
@@ -428,6 +450,10 @@ def main_handler(event=None, context=None):
 
     costexplorer.addReport(Name="Accounts", GroupBy=[{"Type": "DIMENSION","Key": "LINKED_ACCOUNT"}],Style='Total')
     costexplorer.addReport(Name="Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total')
+    if os.environ.get('ACCOUNTS'): #Support for multiple/different Cost Allocation tags
+        for tagkey in os.environ.get('ACCOUNTS').split(','):
+            tabname = tagkey.replace(":",".") #Remove special chars from Excel tabname
+            costexplorer.addReport(Name="{}".format(tabname)[:31], GroupBy=[],Style='Total')
     costexplorer.generateExcel()
     return "Report Generated"
 
