@@ -453,7 +453,7 @@ def main_handler(event=None, context=None):
     if os.environ.get('ACCOUNTS'): #Support for multiple/different Cost Allocation tags
         for tagkey in os.environ.get('ACCOUNTS').split(','):
             tabname = tagkey.replace(":",".") #Remove special chars from Excel tabname
-            costexplorer.addReport(Name="{}".format(tabname)[:31], GroupBy=[],Style='Total')
+            costexplorer.addReport(Name="{}".format(tabname)[:31], GroupBy=[],Style='Total', Assume=tagkey)
     costexplorer.generateExcel()
     return "Report Generated"
 
