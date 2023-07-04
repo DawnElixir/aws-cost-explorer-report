@@ -461,21 +461,21 @@ def main_handler(event=None, context=None):
             costexplorer.addReport(Name=account+"-Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total')
     else:
         costexplorer = CostExplorer(CurrentMonth=False)
-    
-            #Default addReport has filter to remove Support / Credits / Refunds / UpfrontRI / Tax
-            if os.environ.get('COST_TAGS'): #Support for multiple/different Cost Allocation tags
-                for tagkey in os.environ.get('COST_TAGS').split(','):
-                    tabname = tagkey.replace(":",".") #Remove special chars from Excel tabname
-                    costexplorer.addReport(Name="{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Total')
-                    costexplorer.addReport(Name="Change-{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Change')
-            #Overall Billing Reports
-            costexplorer.addReport(Name="Total", GroupBy=[],Style='Total',IncSupport=True)
-            costexplorer.addReport(Name="TotalChange", GroupBy=[],Style='Change')
-            #GroupBy Reports
-            costexplorer.addReport(Name="Services", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Total',IncSupport=True)
-            
-            #costexplorer.addReport(Name="Accounts", GroupBy=[{"Type": "DIMENSION","Key": "LINKED_ACCOUNT"}],Style='Total')
-            costexplorer.addReport(Name="Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total')
+
+        #Default addReport has filter to remove Support / Credits / Refunds / UpfrontRI / Tax
+        if os.environ.get('COST_TAGS'): #Support for multiple/different Cost Allocation tags
+            for tagkey in os.environ.get('COST_TAGS').split(','):
+                tabname = tagkey.replace(":",".") #Remove special chars from Excel tabname
+                costexplorer.addReport(Name="{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Total')
+                costexplorer.addReport(Name="Change-{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Change')
+        #Overall Billing Reports
+        costexplorer.addReport(Name="Total", GroupBy=[],Style='Total',IncSupport=True)
+        costexplorer.addReport(Name="TotalChange", GroupBy=[],Style='Change')
+        #GroupBy Reports
+        costexplorer.addReport(Name="Services", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Total',IncSupport=True)
+        
+        #costexplorer.addReport(Name="Accounts", GroupBy=[{"Type": "DIMENSION","Key": "LINKED_ACCOUNT"}],Style='Total')
+        costexplorer.addReport(Name="Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total')
     costexplorer.generateExcel()
     return "Report Generated"
 
