@@ -61,8 +61,6 @@ else:
 TAG_VALUE_FILTER = os.environ.get('TAG_VALUE_FILTER') or '*'
 TAG_KEY = os.environ.get('TAG_KEY')
 
-ACCOUNTS
-
 class CostExplorer:
     """Retrieves BillingInfo checks from CostExplorer API
     >>> costexplorer = CostExplorer()
