@@ -348,7 +348,9 @@ class CostExplorer:
                 key = i['Keys'][0]
                 if key in self.accounts:
                     key = self.accounts[key][ACCOUNT_LABEL]
-                key.replace("Owner$", "")
+                key = key.replace("Owner$", "")
+                if key == "":
+                    key = "(No Tag)"
                 row.update({key:float(i['Metrics']['UnblendedCost']['Amount'])}) 
             if not v['Groups']:
                 row.update({'Total':float(v['Total']['UnblendedCost']['Amount'])})
