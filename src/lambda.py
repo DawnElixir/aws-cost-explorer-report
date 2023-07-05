@@ -80,8 +80,8 @@ class CostExplorer:
         if LAST_MONTH_ONLY:
             self.start = (datetime.date.today() - relativedelta(months=+1)).replace(day=1) #1st day of month a month ago
         else:
-            # Default is last 12 months
-            self.start = (datetime.date.today() - relativedelta(months=+6)).replace(day=1) #1st day of month 12 months ago
+            # Default is last 6 months
+            self.start = (datetime.date.today() - relativedelta(months=+6)).replace(day=1) #1st day of month 6 months ago
     
         self.ristart = (datetime.date.today() - relativedelta(months=+11)).replace(day=1) #1st day of month 11 months ago
         self.sixmonth = (datetime.date.today() - relativedelta(months=+6)).replace(day=1) #1st day of month 6 months ago, so RI util has savings values
@@ -392,9 +392,9 @@ class CostExplorer:
                 chart = workbook.add_chart({'type': 'column', 'subtype': 'stacked'})
                 
                 
-                chartend=12
+                chartend=6
                 if CURRENT_MONTH:
-                    chartend=13
+                    chartend=7
                 for row_num in range(1, len(report['Data']) + 1):
                     chart.add_series({
                         'name':       [report['Name'], row_num, 0],
