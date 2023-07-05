@@ -403,7 +403,7 @@ class CostExplorer:
                     })
                 chart.set_y_axis({'label_position': 'low'})
                 chart.set_x_axis({'label_position': 'low'})
-                worksheet.insert_chart('O2', chart, {'x_scale': 2.0, 'y_scale': 2.0})
+                worksheet.insert_chart('H2', chart, {'x_scale': 2.0, 'y_scale': 2.0})
         writer.close()
         
         #Time to deliver the file to S3
