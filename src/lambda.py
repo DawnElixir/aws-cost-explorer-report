@@ -354,7 +354,7 @@ class CostExplorer:
                 row.update({key:float(i['Metrics']['UnblendedCost']['Amount'])}) 
             if not v['Groups']:
                 row.update({'Total':float(v['Total']['UnblendedCost']['Amount'])})
-            rows.append(row)  
+            rows.append(row)
 
         df = pd.DataFrame(rows)
         df.set_index("date", inplace= True)
@@ -377,6 +377,125 @@ class CostExplorer:
         self.reports.append({'Name':Name,'Data':df, 'Type':type})
         
         
+    def addSummaryReport(self, Name="Default",GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"},], Style='Total', NoCredits=True, CreditsOnly=False, RefundOnly=False, UpfrontOnly=False, IncSupport=False, IncTax=True, AssumeAccount=False):
+        type = 'chart' #other option table
+        if os.environ.get('ACCOUNTS'): #Support for multiple/different Cost Allocation tags
+            rows = []
+            Filter = {"And": []}
+
+            Dimensions={"Not": {"Dimensions": {"Key": "RECORD_TYPE","Values": ["Credit", "Refund", "Upfront", "Support"]}}}
+            if INC_SUPPORT or IncSupport: #If global set for including support, we dont exclude it
+                Dimensions={"Not": {"Dimensions": {"Key": "RECORD_TYPE","Values": ["Credit", "Refund", "Upfront"]}}}
+            if CreditsOnly:
+                Dimensions={"Dimensions": {"Key": "RECORD_TYPE","Values": ["Credit",]}}
+            if RefundOnly:
+                Dimensions={"Dimensions": {"Key": "RECORD_TYPE","Values": ["Refund",]}}
+            if UpfrontOnly:
+                Dimensions={"Dimensions": {"Key": "RECORD_TYPE","Values": ["Upfront",]}}
+            if "Not" in Dimensions and (not INC_TAX or not IncTax): #If filtering Record_Types and Tax excluded
+                Dimensions["Not"]["Dimensions"]["Values"].append("Tax")
+
+            tagValues = None
+            if TAG_KEY:
+                tagValues = self.client.get_tags(
+                    SearchString=TAG_VALUE_FILTER,
+                    TimePeriod = {
+                        'Start': self.start.isoformat(),
+                        'End': datetime.date.today().isoformat()
+                    },
+                    TagKey=TAG_KEY
+                )
+
+            if tagValues:
+                Filter["And"].append(Dimensions)
+                if len(tagValues["Tags"]) > 0:
+                    Tags = {"Tags": {"Key": TAG_KEY, "Values": tagValues["Tags"]}}
+                    Filter["And"].append(Tags)
+            else:
+                Filter = Dimensions.copy()
+            for account in os.environ.get('ACCOUNTS').split(','):
+                results = []
+                sts_connection = boto3.client('sts')
+                acct_cred = sts_connection.assume_role(
+                    RoleArn="arn:aws-cn:iam::"+account+":role/ARM_Role",
+                    RoleSessionName="arm_cross_acct"
+                )
+                target_acct_client = boto3.client('ce', region_name='cn-north-1', aws_access_key_id=acct_cred['Credentials']['AccessKeyId'], aws_secret_access_key=acct_cred['Credentials']['SecretAccessKey'], aws_session_token=acct_cred['Credentials']['SessionToken'])
+                response = target_acct_client.get_cost_and_usage(
+                    TimePeriod={
+                        'Start': self.start.isoformat(),
+                        'End': self.end.isoformat()
+                    },
+                    Granularity='MONTHLY',
+                    Metrics=[
+                        'UnblendedCost',
+                    ],
+                    GroupBy=GroupBy,
+                    Filter=Filter
+                )
+                if response:
+                    results.extend(response['ResultsByTime'])
+             
+                    while 'nextToken' in response:
+                        nextToken = response['nextToken']
+                        response = self.client.get_cost_and_usage(
+                            TimePeriod={
+                                'Start': self.start.isoformat(),
+                                'End': self.end.isoformat()
+                            },
+                            Granularity='MONTHLY',
+                            Metrics=[
+                                'UnblendedCost',
+                            ],
+                            GroupBy=GroupBy,
+                            NextPageToken=nextToken
+                        )
+             
+                        results.extend(response['ResultsByTime'])
+                        if 'nextToken' in response:
+                            nextToken = response['nextToken']
+                        else:
+                            nextToken = False
+                
+                sort = ''
+                for v in results:
+                    row = {'date':v['TimePeriod']['Start']}
+                    sort = v['TimePeriod']['Start']
+                    for i in v['Groups']:
+                        key = i['Keys'][0]
+                        if key in self.accounts:
+                            key = self.accounts[key][ACCOUNT_LABEL]
+                        key = key.replace("Owner$", "")
+                        if key == "":
+                            key = "(No Tag)"
+                        row.update({key+account:float(i['Metrics']['UnblendedCost']['Amount'])}) 
+                    if not v['Groups']:
+                        row.update({account+'-Total':float(v['Total']['UnblendedCost']['Amount'])})
+                    print(row)
+                    rows.append(row) 
+                    print(rows)
+            
+            merged_data = {}
+            for item in rows:
+                date = item['date']
+                total_key = list(item.keys())[1]  # Assuming the 'date' key is always at index 0
+                total_value = item[total_key]
+                if date in merged_data:
+                    merged_data[date][total_key] = total_value
+                else:
+                    merged_data[date] = {total_key: total_value}
+            
+            rows = [{'date': date, **values} for date, values in merged_data.items()]
+                    
+
+            df = pd.DataFrame(rows)
+            df.set_index("date", inplace= True)
+            df = df.fillna(0.0)
+            
+            df = df.T
+            #df = df.sort_values(sort, ascending=False)
+            self.reports.append({'Name':Name,'Data':df, 'Type':type}) 
+
     def generateExcel(self):
         # Create a Pandas Excel writer using XlsxWriter as the engine.\
         os.chdir('/tmp')
@@ -438,6 +557,7 @@ class CostExplorer:
 def main_handler(event=None, context=None): 
     costexplorer = CostExplorer(CurrentMonth=False)
     if os.environ.get('ACCOUNTS'): #Support for multiple/different Cost Allocation tags
+        costexplorer.addSummaryReport(Name="Summary", GroupBy=[],Style='Total',IncSupport=True)
         for account in os.environ.get('ACCOUNTS').split(','):
             #Default addReport has filter to remove Support / Credits / Refunds / UpfrontRI / Tax
             if os.environ.get('COST_TAGS'): #Support for multiple/different Cost Allocation tags
