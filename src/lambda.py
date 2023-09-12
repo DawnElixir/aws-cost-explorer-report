@@ -350,6 +350,7 @@ class CostExplorer:
                 if key in self.accounts:
                     key = self.accounts[key][ACCOUNT_LABEL]
                 key = key.replace("Owner$", "")
+                key = key.replace("@nwcdcloud.cn", "")
                 if key == "":
                     key = "(No Tag)"
                 row.update({key:float(i['Metrics']['UnblendedCost']['Amount'])}) 
@@ -415,10 +416,13 @@ class CostExplorer:
             else:
                 Filter = Dimensions.copy()
             for account in os.environ.get('ACCOUNTS').split(','):
+                print(account)
+                login=account.split(':')[1]
+                accountID=account.split(':')[0]
                 results = []
                 sts_connection = boto3.client('sts')
                 acct_cred = sts_connection.assume_role(
-                    RoleArn="arn:aws-cn:iam::"+account+":role/arm-op-role",
+                    RoleArn="arn:aws-cn:iam::"+accountID+":role/arm-op-role",
                     RoleSessionName="arm_cross_acct"
                 )
                 target_acct_client = boto3.client('ce', region_name='cn-north-1', aws_access_key_id=acct_cred['Credentials']['AccessKeyId'], aws_secret_access_key=acct_cred['Credentials']['SecretAccessKey'], aws_session_token=acct_cred['Credentials']['SessionToken'])
@@ -469,9 +473,9 @@ class CostExplorer:
                         key = key.replace("Owner$", "")
                         if key == "":
                             key = "(No Tag)"
-                        row.update({key+account:float(i['Metrics']['UnblendedCost']['Amount'])}) 
+                        row.update({key+accountID:float(i['Metrics']['UnblendedCost']['Amount'])}) 
                     if not v['Groups']:
-                        row.update({account+'-Total':float(v['Total']['UnblendedCost']['Amount'])})
+                        row.update({login+' '+accountID:float(v['Total']['UnblendedCost']['Amount'])})
                     rows.append(row) 
             
             merged_data = {}
@@ -495,6 +499,13 @@ class CostExplorer:
             df = df.sort_values(sort, ascending=False)
             self.reports.append({'Name':Name,'Data':df, 'Type':type}) 
         
+    def resourceReport(self, Name="Resource"):
+        df = pd.DataFrame(rows)
+            
+        df = df.fillna(0.0)
+            
+        df = df.T
+        self.reports.append({'Name':Name,'Data':df, 'Type':'table'}) 
 
     def generateExcel(self):
         # Create a Pandas Excel writer using XlsxWriter as the engine.\
@@ -576,21 +587,22 @@ def main_handler(event=None, context=None):
     costexplorer = CostExplorer(CurrentMonth=False)
     if os.environ.get('ACCOUNTS'): #Support for multiple/different Cost Allocation tags
         costexplorer.addSummaryReport(Name="Summary", GroupBy=[],Style='Total',IncSupport=True)
-        for account in os.environ.get('ACCOUNTS').split(','):
+        #for account in os.environ.get('ACCOUNTS').split(','):
             #Default addReport has filter to remove Support / Credits / Refunds / UpfrontRI / Tax
-            if os.environ.get('COST_TAGS'): #Support for multiple/different Cost Allocation tags
-                for tagkey in os.environ.get('COST_TAGS').split(','):
-                    tabname = tagkey.replace(":",".") #Remove special chars from Excel tabname
-                    costexplorer.addReport(Name=account+"-"+"{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Total', AssumeAccount=account)
-                    costexplorer.addReport(Name=account+"-"+"Change-{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Change', AssumeAccount=account)
+            
             #Overall Billing Reports
             #costexplorer.addReport(Name=account+"-Total", GroupBy=[],Style='Total',IncSupport=True, AssumeAccount=account)
             #costexplorer.addReport(Name=account+"-TotalChange", GroupBy=[],Style='Change', AssumeAccount=account)
             #GroupBy Reports
-            costexplorer.addReport(Name=account+"-Services", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Total',IncSupport=True, AssumeAccount=account)
+            #costexplorer.addReport(Name=account+"-Services", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Total',IncSupport=True, AssumeAccount=account)
             
             #costexplorer.addReport(Name=account+"-Accounts", GroupBy=[{"Type": "DIMENSION","Key": "LINKED_ACCOUNT"}],Style='Total')
             #costexplorer.addReport(Name=account+"-Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total', AssumeAccount=account)
+        if os.environ.get('COST_TAGS'): #Support for multiple/different Cost Allocation tags
+            for group_account in os.environ.get('GROUP_ACCOUNTS').split(','):
+                for tagkey in os.environ.get('COST_TAGS').split(','):
+                    tabname = tagkey.replace(":",".") #Remove special chars from Excel tabname
+                    costexplorer.addReport(Name=group_account+"-"+"{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Total', AssumeAccount=group_account)
     else:
         costexplorer = CostExplorer(CurrentMonth=False)
 
