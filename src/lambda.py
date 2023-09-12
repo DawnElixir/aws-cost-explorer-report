@@ -26,6 +26,7 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import COMMASPACE, formatdate
+from openpyxl import load_workbook
 
 #GLOBALS
 SES_REGION = os.environ.get('SES_REGION')
@@ -286,7 +287,7 @@ class CostExplorer:
             if AssumeAccount:
                 sts_connection = boto3.client('sts')
                 acct_cred = sts_connection.assume_role(
-                    RoleArn="arn:aws-cn:iam::"+AssumeAccount+":role/ARM_Role",
+                    RoleArn="arn:aws-cn:iam::"+AssumeAccount+":role/arm-op-role",
                     RoleSessionName="arm_cross_acct"
                 )
                 target_acct_client = boto3.client('ce', region_name='cn-north-1', aws_access_key_id=acct_cred['Credentials']['AccessKeyId'], aws_secret_access_key=acct_cred['Credentials']['SecretAccessKey'], aws_session_token=acct_cred['Credentials']['SessionToken'])
@@ -417,7 +418,7 @@ class CostExplorer:
                 results = []
                 sts_connection = boto3.client('sts')
                 acct_cred = sts_connection.assume_role(
-                    RoleArn="arn:aws-cn:iam::"+account+":role/ARM_Role",
+                    RoleArn="arn:aws-cn:iam::"+account+":role/arm-op-role",
                     RoleSessionName="arm_cross_acct"
                 )
                 target_acct_client = boto3.client('ce', region_name='cn-north-1', aws_access_key_id=acct_cred['Credentials']['AccessKeyId'], aws_secret_access_key=acct_cred['Credentials']['SecretAccessKey'], aws_session_token=acct_cred['Credentials']['SessionToken'])
@@ -471,9 +472,7 @@ class CostExplorer:
                         row.update({key+account:float(i['Metrics']['UnblendedCost']['Amount'])}) 
                     if not v['Groups']:
                         row.update({account+'-Total':float(v['Total']['UnblendedCost']['Amount'])})
-                    print(row)
                     rows.append(row) 
-                    print(rows)
             
             merged_data = {}
             for item in rows:
@@ -493,13 +492,15 @@ class CostExplorer:
             df = df.fillna(0.0)
             
             df = df.T
-            #df = df.sort_values(sort, ascending=False)
+            df = df.sort_values(sort, ascending=False)
             self.reports.append({'Name':Name,'Data':df, 'Type':type}) 
+        
 
     def generateExcel(self):
         # Create a Pandas Excel writer using XlsxWriter as the engine.\
         os.chdir('/tmp')
-        writer = pd.ExcelWriter('cost_explorer_report.xlsx', engine='xlsxwriter')
+        filepath = 'cost_explorer_report.xlsx'
+        writer = pd.ExcelWriter(filepath, engine='xlsxwriter')
         workbook = writer.book
         for report in self.reports:
             print(report['Name'],report['Type'])
@@ -524,11 +525,27 @@ class CostExplorer:
                 chart.set_x_axis({'label_position': 'low'})
                 worksheet.insert_chart('H2', chart, {'x_scale': 2.0, 'y_scale': 2.0})
         writer.close()
+        workbook = load_workbook(filepath)
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            for column in sheet.columns:
+                max_length = 0
+                column = [cell for cell in column]
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(cell.value)
+                    except:
+                        pass
+                adjusted_width = (max_length + 2) * 1.2
+                sheet.column_dimensions[column[0].column_letter].width = adjusted_width
+
+        workbook.save(filepath)
         
         #Time to deliver the file to S3
         if os.environ.get('S3_BUCKET'):
             s3 = boto3.client('s3')
-            s3.upload_file("cost_explorer_report.xlsx", os.environ.get('S3_BUCKET'), "cost_explorer_report.xlsx")
+            s3.upload_file(filepath, os.environ.get('S3_BUCKET'), filepath)
         if os.environ.get('SES_SEND'):
             #Email logic
             msg = MIMEMultipart()
@@ -538,12 +555,12 @@ class CostExplorer:
             msg['Subject'] = "Cost Explorer Report"
             text = "Find your Cost Explorer report attached\n\n"
             msg.attach(MIMEText(text))
-            with open("cost_explorer_report.xlsx", "rb") as fil:
+            with open(filepath, "rb") as fil:
                 part = MIMEApplication(
                     fil.read(),
-                    Name="cost_explorer_report.xlsx"
+                    Name=filepath
                 )
-            part['Content-Disposition'] = 'attachment; filename="%s"' % "cost_explorer_report.xlsx"
+            part['Content-Disposition'] = 'attachment; filename="%s"' % filepath
             msg.attach(part)
             #SES Sending
             ses = boto3.client('ses', region_name=SES_REGION)
@@ -551,7 +568,8 @@ class CostExplorer:
                 Source=msg['From'],
                 Destinations=os.environ.get('SES_SEND').split(","),
                 RawMessage={'Data': msg.as_string()}
-            )     
+            )
+    
 
 
 def main_handler(event=None, context=None): 
@@ -566,13 +584,13 @@ def main_handler(event=None, context=None):
                     costexplorer.addReport(Name=account+"-"+"{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Total', AssumeAccount=account)
                     costexplorer.addReport(Name=account+"-"+"Change-{}".format(tabname)[:31], GroupBy=[{"Type": "TAG","Key": tagkey}],Style='Change', AssumeAccount=account)
             #Overall Billing Reports
-            costexplorer.addReport(Name=account+"-Total", GroupBy=[],Style='Total',IncSupport=True, AssumeAccount=account)
-            costexplorer.addReport(Name=account+"-TotalChange", GroupBy=[],Style='Change', AssumeAccount=account)
+            #costexplorer.addReport(Name=account+"-Total", GroupBy=[],Style='Total',IncSupport=True, AssumeAccount=account)
+            #costexplorer.addReport(Name=account+"-TotalChange", GroupBy=[],Style='Change', AssumeAccount=account)
             #GroupBy Reports
             costexplorer.addReport(Name=account+"-Services", GroupBy=[{"Type": "DIMENSION","Key": "SERVICE"}],Style='Total',IncSupport=True, AssumeAccount=account)
             
             #costexplorer.addReport(Name=account+"-Accounts", GroupBy=[{"Type": "DIMENSION","Key": "LINKED_ACCOUNT"}],Style='Total')
-            costexplorer.addReport(Name=account+"-Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total', AssumeAccount=account)
+            #costexplorer.addReport(Name=account+"-Regions", GroupBy=[{"Type": "DIMENSION","Key": "REGION"}],Style='Total', AssumeAccount=account)
     else:
         costexplorer = CostExplorer(CurrentMonth=False)
 
